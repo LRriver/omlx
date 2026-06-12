@@ -9,17 +9,19 @@ This module provides OpenAI-compatible audio endpoints:
 """
 
 import base64
+import io
 import logging
 import math
 import os
 import re
+import struct
 import tempfile
+import wave
 from typing import AsyncIterator, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
 
-from ..engine.audio_utils import wav_bytes_to_pcm_frames, wav_header
 from ..server_metrics import get_server_metrics
 from .audio_models import AudioSpeechRequest, AudioTranscriptionResponse
 
@@ -43,6 +45,8 @@ MIN_NATIVE_TTS_STREAMING_INTERVAL_SECONDS = 0.01
 # so we remap video containers to .m4a before handing off. ffmpeg detects the
 # actual format from file content, not the extension.
 _VIDEO_CONTAINERS = {".mp4", ".mkv", ".mov", ".m4v", ".webm", ".avi"}
+
+_MAX_WAV_CHUNK_SIZE = 0xFFFFFFFF
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +104,65 @@ def _record_audio_request(model_id: str) -> None:
         )
     except Exception as exc:
         logger.warning("Failed to record audio metrics for %s: %s", model_id, exc)
+
+
+def _is_missing_audio_dependency_error(exc: BaseException) -> bool:
+    """Return True for missing optional audio runtime dependencies."""
+    if not isinstance(exc, ImportError):
+        return False
+    module_name = getattr(exc, "name", "") or ""
+    message = str(exc).lower()
+    return (
+        module_name == "mlx_audio"
+        or module_name.startswith("mlx_audio.")
+        or "mlx_audio" in message
+        or "mlx-audio" in message
+        or "omlx[audio]" in message
+    )
+
+
+def _raise_audio_dependency_error(exc: BaseException) -> None:
+    raise HTTPException(
+        status_code=503,
+        detail=(
+            "Audio inference requires optional audio dependencies. "
+            'Install them with: pip install "omlx[audio]". '
+            f"Original error: {exc}"
+        ),
+    ) from exc
+
+
+def wav_header(sample_rate: int, channels: int = 1, sample_width: int = 2) -> bytes:
+    """Create a PCM WAV header suitable for streamed/unknown-length audio."""
+    block_align = channels * sample_width
+    byte_rate = sample_rate * block_align
+    bits_per_sample = sample_width * 8
+    return struct.pack(
+        "<4sI4s4sIHHIIHH4sI",
+        b"RIFF",
+        _MAX_WAV_CHUNK_SIZE,
+        b"WAVE",
+        b"fmt ",
+        16,
+        1,
+        channels,
+        sample_rate,
+        byte_rate,
+        block_align,
+        bits_per_sample,
+        b"data",
+        _MAX_WAV_CHUNK_SIZE,
+    )
+
+
+def wav_bytes_to_pcm_frames(wav_bytes: bytes) -> tuple[int, int, int, bytes]:
+    """Extract WAV metadata and raw PCM frames from WAV bytes."""
+    with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
+        sample_rate = wf.getframerate()
+        channels = wf.getnchannels()
+        sample_width = wf.getsampwidth()
+        pcm_bytes = wf.readframes(wf.getnframes())
+    return sample_rate, channels, sample_width, pcm_bytes
 
 
 async def _read_upload(file: UploadFile) -> bytes:
@@ -268,7 +331,12 @@ async def _stream_speech_response(
             )
             stream_format: Optional[tuple[int, int, int]] = None
             try:
-                async for sample_rate, channels, sample_width, pcm_bytes in engine.stream_synthesize_pcm(
+                async for (
+                    sample_rate,
+                    channels,
+                    sample_width,
+                    pcm_bytes,
+                ) in engine.stream_synthesize_pcm(
                     request.input,
                     voice=request.voice,
                     language=request.language,
@@ -335,7 +403,11 @@ async def _stream_speech_response(
             fmt = (sample_rate, channels, sample_width)
             if stream_format is None:
                 stream_format = fmt
-                yield wav_header(sample_rate=sample_rate, channels=channels, sample_width=sample_width)
+                yield wav_header(
+                    sample_rate=sample_rate,
+                    channels=channels,
+                    sample_width=sample_width,
+                )
             elif fmt != stream_format:
                 raise RuntimeError(
                     "Inconsistent WAV format across TTS segments: "
@@ -397,7 +469,12 @@ async def create_transcription(
     ``{word, start, end, probability}`` objects. Default False preserves the
     existing response shape for every current caller.
     """
-    from omlx.engine.stt import STTEngine
+    try:
+        from omlx.engine.stt import STTEngine
+    except ImportError as exc:
+        if _is_missing_audio_dependency_error(exc):
+            _raise_audio_dependency_error(exc)
+        raise
     from omlx.exceptions import ModelNotFoundError
 
     pool = _get_engine_pool()
@@ -413,6 +490,8 @@ async def create_transcription(
             detail=f"Model '{resolved_model}' not found. Available: {avail}",
         ) from exc
     except Exception as exc:
+        if _is_missing_audio_dependency_error(exc):
+            _raise_audio_dependency_error(exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     if not isinstance(engine, STTEngine):
@@ -483,7 +562,12 @@ async def create_transcription(
 @router.post("/v1/audio/speech")
 async def create_speech(request: AudioSpeechRequest):
     """OpenAI-compatible text-to-speech endpoint."""
-    from omlx.engine.tts import TTSEngine
+    try:
+        from omlx.engine.tts import TTSEngine
+    except ImportError as exc:
+        if _is_missing_audio_dependency_error(exc):
+            _raise_audio_dependency_error(exc)
+        raise
     from omlx.exceptions import ModelNotFoundError
 
     if not request.input or not request.input.strip():
@@ -511,6 +595,8 @@ async def create_speech(request: AudioSpeechRequest):
             detail=f"Model '{resolved_model}' not found. Available: {avail}",
         ) from exc
     except Exception as exc:
+        if _is_missing_audio_dependency_error(exc):
+            _raise_audio_dependency_error(exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     if not isinstance(engine, TTSEngine):
@@ -562,6 +648,8 @@ async def create_speech(request: AudioSpeechRequest):
     except HTTPException:
         raise
     except Exception as exc:
+        if _is_missing_audio_dependency_error(exc):
+            _raise_audio_dependency_error(exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     finally:
         _cleanup_tempfile(ref_audio_path)
@@ -582,7 +670,12 @@ async def process_audio(
     the audio through an STS engine (e.g. DeepFilterNet, MossFormer2,
     SAMAudio, LFM2.5-Audio), and returns WAV bytes of the processed audio.
     """
-    from omlx.engine.sts import STSEngine
+    try:
+        from omlx.engine.sts import STSEngine
+    except ImportError as exc:
+        if _is_missing_audio_dependency_error(exc):
+            _raise_audio_dependency_error(exc)
+        raise
     from omlx.exceptions import ModelNotFoundError
 
     pool = _get_engine_pool()
@@ -598,6 +691,8 @@ async def process_audio(
             detail=f"Model '{resolved_model}' not found. Available: {avail}",
         ) from exc
     except Exception as exc:
+        if _is_missing_audio_dependency_error(exc):
+            _raise_audio_dependency_error(exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     if not isinstance(engine, STSEngine):
@@ -623,6 +718,8 @@ async def process_audio(
     except HTTPException:
         raise
     except Exception as exc:
+        if _is_missing_audio_dependency_error(exc):
+            _raise_audio_dependency_error(exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     finally:
         if tmp_path and os.path.exists(tmp_path):

@@ -505,18 +505,10 @@ from .api.mcp_routes import set_mcp_manager_getter
 set_mcp_manager_getter(get_mcp_manager)
 app.include_router(mcp_router, dependencies=[Depends(verify_api_key)])
 
-# Include audio routes only when mlx-audio is installed.
-# audio_routes.py itself only imports fastapi/stdlib at module level, so it
-# would always import successfully — we need an explicit mlx-audio check.
-try:
-    import mlx_audio as _  # noqa: F401
-
-    from .api.audio_routes import router as audio_router
-
-    app.include_router(audio_router, dependencies=[Depends(verify_api_key)])
-    del _
-except ImportError:
-    pass
+# Include audio routes unconditionally. The route handlers return actionable
+# dependency guidance when optional audio runtime packages are missing.
+from .api.audio_routes import router as audio_router
+app.include_router(audio_router, dependencies=[Depends(verify_api_key)])
 
 # Include admin routes
 from .admin.auth import _RedirectToLogin
