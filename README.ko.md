@@ -9,6 +9,8 @@
 <h1 align="center">oMLX</h1>
 <p align="center"><b>Mac에 최적화된 LLM 추론 서버</b><br>Continuous Batching과 다단계 KV 캐시로 최적화된 추론 서버를, 메뉴바에서 편리하게</p>
 
+<p align="center"><b>새 기능: 일급 오디오 모델 모드</b><br>OpenAI 호환 전용 오디오 엔드포인트로 STT, TTS, STS/오디오 처리 모델을 제공하고 선택 의존성 설치 안내를 명확히 보여줍니다.</p>
+
 <p align="center">
 <a href="https://www.buymeacoffee.com/jundot"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="40"></a>
 </p>
@@ -78,6 +80,7 @@ omlx start
 git clone https://github.com/jundot/omlx.git
 cd omlx
 pip install -e .          # 코어만
+pip install -e ".[audio]" # 오디오 모델 포함: STT, TTS, STS/오디오 처리
 pip install -e ".[mcp]"   # MCP (Model Context Protocol) 포함
 ```
 
@@ -106,7 +109,7 @@ omlx restart
 omlx serve --model-dir ~/models
 ```
 
-서버가 하위 디렉토리에서 LLM, VLM, 임베딩 모델, 리랭커를 자동으로 탐색합니다. OpenAI 호환 클라이언트에서 `http://localhost:8000/v1`로 연결할 수 있습니다. 내장 채팅 UI도 `http://localhost:8000/admin/chat`에서 사용 가능합니다.
+서버가 하위 디렉토리에서 LLM, VLM, 임베딩 모델, 리랭커, 오디오 모델을 자동으로 탐색합니다. OpenAI 호환 클라이언트에서 `http://localhost:8000/v1`로 연결할 수 있습니다. 내장 채팅 UI도 `http://localhost:8000/admin/chat`에서 사용 가능합니다.
 
 ### Homebrew 서비스
 
@@ -131,7 +134,7 @@ brew services info omlx     # 상태 확인
 
 ## 기능
 
-Apple Silicon에서 텍스트 LLM, 비전-언어 모델(VLM), OCR 모델, 임베딩 모델, 리랭커를 지원합니다.
+Apple Silicon에서 텍스트 LLM, 비전-언어 모델(VLM), OCR 모델, 임베딩 모델, 리랭커, STT/TTS/STS 오디오 처리 모델을 지원합니다.
 
 ### 관리자 대시보드
 
@@ -144,6 +147,10 @@ Apple Silicon에서 텍스트 LLM, 비전-언어 모델(VLM), OCR 모델, 임베
 ### 비전-언어 모델
 
 텍스트 LLM과 동일한 연속 배칭 및 계층형 KV 캐시 스택으로 VLM을 실행합니다. 멀티 이미지 채팅, base64/URL/파일 이미지 입력, 비전 컨텍스트를 활용한 Tool calling을 지원합니다. OCR 모델(DeepSeek-OCR, DOTS-OCR, GLM-OCR)은 자동 감지되며 최적화된 프롬프트가 적용됩니다.
+
+### 오디오 모델
+
+음성 인식, 텍스트 음성 변환, speech-to-speech/오디오 처리 모델을 전용 오디오 라우트로 실행합니다. `audio_tts` 모델은 `/v1/audio/speech`, 향상·분리·speech-to-speech `audio_sts` 모델은 `/v1/audio/process`를 사용합니다. 소스 설치에서는 `audio` extra를 사용하세요.
 
 ### 계층형 KV 캐시 (Hot + Cold)
 
@@ -166,7 +173,7 @@ Claude Code에서 작은 컨텍스트 모델을 실행하기 위한 컨텍스트
 
 ### 멀티 모델 서빙
 
-동일한 서버에서 LLM, VLM, 임베딩 모델, 리랭커를 로드합니다. 자동 및 수동 제어를 조합하여 모델을 관리합니다:
+동일한 서버에서 LLM, VLM, 임베딩 모델, 리랭커, 오디오 모델을 로드합니다. TTS와 STS/오디오 처리 모델은 전용 비채팅 오디오 엔진을 사용합니다. 자동 및 수동 제어를 조합하여 모델을 관리합니다:
 
 - **LRU 언로드**: 메모리가 부족하면 가장 오래 사용하지 않은 모델이 자동으로 언로드됩니다.
 - **수동 로드/언로드**: 관리자 패널의 상태 표시를 클릭해서 모델을 바로 로드하거나 언로드할 수 있습니다.
@@ -179,7 +186,7 @@ Claude Code에서 작은 컨텍스트 모델을 실행하기 위한 컨텍스트
 관리자 패널에서 샘플링 파라미터, 채팅 템플릿 파라미터, TTL, 모델 별칭, 모델 타입 오버라이드 등을 모델별로 설정합니다. 서버 재시작 없이 즉시 적용됩니다.
 
 - **모델 별칭**: 커스텀 API 표시 이름을 설정합니다. `/v1/models`에서 별칭을 반환하며, 요청 시 별칭과 디렉토리 이름 모두 사용 가능합니다.
-- **모델 타입 오버라이드**: 자동 감지와 관계없이 LLM 또는 VLM으로 수동 설정합니다.
+- **모델 타입 오버라이드**: 자동 감지와 관계없이 LLM, VLM, `audio_tts`, `audio_sts`로 수동 설정합니다.
 
 <p align="center">
   <img src="docs/images/omlx_ChatTemplateKwargs.png" alt="oMLX 채팅 템플릿 파라미터" width="480">
@@ -237,7 +244,24 @@ OpenAI 및 Anthropic API를 그대로 대체합니다. 스트리밍 사용량 �
 | `POST /v1/messages` | Anthropic Messages API |
 | `POST /v1/embeddings` | 텍스트 임베딩 |
 | `POST /v1/rerank` | 문서 리랭킹 |
+| `POST /v1/audio/transcriptions` | 음성 인식; `audio` extra 필요 |
+| `POST /v1/audio/speech` | 텍스트 음성 변환; `audio` extra 필요 |
+| `POST /v1/audio/process` | STS/오디오 처리; `audio` extra 필요 |
 | `GET /v1/models` | 사용 가능한 모델 목록 |
+
+오디오 엔드포인트는 전용 라우트입니다. `audio_tts` 모델은 `/v1/audio/speech`, speech-to-speech·향상·분리 `audio_sts` 모델은 `/v1/audio/process`를 사용합니다.
+
+```bash
+curl http://localhost:8000/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen3-tts","input":"Hello from oMLX","voice":"alloy","response_format":"wav"}' \
+  --output speech.wav
+
+curl http://localhost:8000/v1/audio/process \
+  -F model=deepfilternet \
+  -F file=@input.wav \
+  --output processed.wav
+```
 
 ### Tool calling & 구조화된 출력
 
@@ -278,6 +302,7 @@ mlx-lm에서 사용 가능한 모든 함수 호출 형식, JSON 스키마 검증
 | OCR | DeepSeek-OCR, DOTS-OCR, GLM-OCR |
 | 임베딩 | BERT, BGE-M3, ModernBERT |
 | 리랭커 | ModernBERT, XLM-RoBERTa |
+| 오디오 | Whisper/Qwen ASR, Qwen3-TTS/Kokoro, DeepFilterNet/SAMAudio/LFM2-Audio |
 
 ## CLI 설정
 

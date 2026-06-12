@@ -9,6 +9,8 @@
 <h1 align="center">oMLX</h1>
 <p align="center"><b>LLM 推理，为你的 Mac 优化</b><br>连续批处理和分层 KV 缓存，直接从菜单栏管理。</p>
 
+<p align="center"><b>新增：一等音频模型模式</b><br>通过专用的 OpenAI 兼容音频端点服务 STT、TTS 和 STS/音频处理模型，并提供清晰的可选依赖安装提示。</p>
+
 <p align="center">
 <a href="https://www.buymeacoffee.com/jundot"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="40"></a>
 </p>
@@ -78,6 +80,7 @@ brew services start omlx
 git clone https://github.com/jundot/omlx.git
 cd omlx
 pip install -e .          # 仅核心
+pip install -e ".[audio]" # 含音频模型：STT、TTS 和 STS/音频处理
 pip install -e ".[mcp]"   # 含 MCP（Model Context Protocol）支持
 ```
 
@@ -100,7 +103,7 @@ pip install -e ".[mcp]"   # 含 MCP（Model Context Protocol）支持
 omlx serve --model-dir ~/models
 ```
 
-服务器会自动从子目录中发现 LLM、VLM、嵌入模型和重排序模型。任何 OpenAI 兼容客户端都可以连接到 `http://localhost:8000/v1`。内置聊天 UI 也可在 `http://localhost:8000/admin/chat` 使用。
+服务器会自动从子目录中发现 LLM、VLM、嵌入模型、重排序模型和音频模型。任何 OpenAI 兼容客户端都可以连接到 `http://localhost:8000/v1`。内置聊天 UI 也可在 `http://localhost:8000/admin/chat` 使用。
 
 ### Homebrew 服务
 
@@ -121,7 +124,7 @@ brew services info omlx     # 查看状态
 
 ## 功能
 
-在 Apple Silicon 上支持文本 LLM、视觉语言模型（VLM）、OCR 模型、嵌入模型和重排序模型。
+在 Apple Silicon 上支持文本 LLM、视觉语言模型（VLM）、OCR 模型、嵌入模型、重排序模型，以及 STT、TTS 和 STS/音频处理模型。
 
 ### 管理后台
 
@@ -134,6 +137,10 @@ brew services info omlx     # 查看状态
 ### 视觉语言模型
 
 使用与文本 LLM 相同的连续批处理和分层 KV 缓存堆栈运行 VLM。支持多图聊天、base64/URL/文件图像输入，以及带视觉上下文的工具调用。OCR 模型（DeepSeek-OCR、DOTS-OCR、GLM-OCR）会被自动识别，并使用优化的提示词。
+
+### 音频模型
+
+通过专用音频路由运行语音转文字、文字转语音和语音到语音/音频处理模型。`audio_tts` 模型使用 `/v1/audio/speech`，`audio_sts` 增强、分离或语音到语音模型使用 `/v1/audio/process`。源码安装需要使用 `audio` extra。
 
 ### 分层 KV 缓存（热缓存 + 冷缓存）
 
@@ -156,7 +163,7 @@ brew services info omlx     # 查看状态
 
 ### 多模型服务
 
-在同一服务器中加载 LLM、VLM、嵌入模型和重排序模型。通过自动和手动控制的组合管理模型：
+在同一服务器中加载 LLM、VLM、嵌入模型、重排序模型和音频模型。TTS 和 STS/音频处理模型使用专用的非聊天音频引擎。通过自动和手动控制的组合管理模型：
 
 - **LRU 驱逐**: 内存不足时，最近最少使用的模型会被自动卸载。
 - **手动加载/卸载**: 在管理后台通过状态标识按需加载或卸载模型。
@@ -169,7 +176,7 @@ brew services info omlx     # 查看状态
 在管理后台直接配置每个模型的采样参数、聊天模板参数、TTL、模型别名、模型类型覆盖等。修改即时生效，无需重启服务器。
 
 - **模型别名**: 设置自定义 API 显示名称。`/v1/models` 返回别名，请求时别名和目录名均可使用。
-- **模型类型覆盖**: 无论自动检测结果如何，手动设置为 LLM 或 VLM。
+- **模型类型覆盖**: 无论自动检测结果如何，手动设置为 LLM、VLM、`audio_tts` 或 `audio_sts`。
 
 <p align="center">
   <img src="docs/images/omlx_ChatTemplateKwargs.png" alt="oMLX 聊天模板参数" width="480">
@@ -227,7 +234,24 @@ OpenAI 和 Anthropic API 的直接替代品。支持流式使用统计（`stream
 | `POST /v1/messages` | Anthropic Messages API |
 | `POST /v1/embeddings` | 文本嵌入 |
 | `POST /v1/rerank` | 文档重排序 |
+| `POST /v1/audio/transcriptions` | 语音转文字；需要 `audio` extra |
+| `POST /v1/audio/speech` | 文本转语音；需要 `audio` extra |
+| `POST /v1/audio/process` | STS/音频处理；需要 `audio` extra |
 | `GET /v1/models` | 列出可用模型 |
+
+音频端点是专用路由。`audio_tts` 模型使用 `/v1/audio/speech`，语音到语音、增强或分离类 `audio_sts` 模型使用 `/v1/audio/process`。
+
+```bash
+curl http://localhost:8000/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen3-tts","input":"Hello from oMLX","voice":"alloy","response_format":"wav"}' \
+  --output speech.wav
+
+curl http://localhost:8000/v1/audio/process \
+  -F model=deepfilternet \
+  -F file=@input.wav \
+  --output processed.wav
+```
 
 ### 工具调用与结构化输出
 
@@ -268,6 +292,7 @@ OpenAI 和 Anthropic API 的直接替代品。支持流式使用统计（`stream
 | OCR | DeepSeek-OCR、DOTS-OCR、GLM-OCR |
 | 嵌入 | BERT、BGE-M3、ModernBERT |
 | 重排序 | ModernBERT、XLM-RoBERTa |
+| 音频 | Whisper/Qwen ASR、Qwen3-TTS/Kokoro、DeepFilterNet/SAMAudio/LFM2-Audio |
 
 ## CLI 配置
 

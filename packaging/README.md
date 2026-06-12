@@ -54,6 +54,12 @@ packaging/
 
 No application layer — the Swift app is the application surface.
 
+The macOS app bundle includes `mlx-audio` in the `mlx-base` layer, so app users
+do not need a separate audio install. Source installs that need audio endpoints
+should use `pip install -e ".[audio]"`; the bundle path uses the internal
+`bundle` extra and keeps the same STT/TTS/STS runtime dependencies in the
+packaged Python layer.
+
 ## Installation
 
 The Swift build (`build.sh release`) produces

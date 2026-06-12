@@ -9,6 +9,8 @@
 <h1 align="center">oMLX</h1>
 <p align="center"><b>Inférence LLM, optimisée pour votre Mac</b><br>Batching continu et cache KV à plusieurs niveaux, géré directement depuis votre barre de menus.</p>
 
+<p align="center"><b>Nouveau : modes audio de première classe</b><br>Servez des modèles STT, TTS et STS/traitement audio avec des endpoints audio compatibles OpenAI et des indications claires pour les dépendances optionnelles.</p>
+
 <p align="center">
 <a href="https://www.buymeacoffee.com/jundot"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="40"></a>
 </p>
@@ -79,6 +81,7 @@ brew services start omlx
 git clone https://github.com/jundot/omlx.git
 cd omlx
 pip install -e .          # Core uniquement
+pip install -e ".[audio]" # Avec modèles audio : STT, TTS et STS/traitement audio
 pip install -e ".[mcp]"   # Avec support MCP (Model Context Protocol)
 ```
 
@@ -101,7 +104,7 @@ Lancez oMLX depuis votre dossier Applications. L'écran de bienvenue vous guide 
 omlx serve --model-dir ~/models
 ```
 
-Le serveur détecte automatiquement les LLM, VLM, modèles d'embedding et rerankers depuis les sous-répertoires. N'importe quel client compatible OpenAI peut se connecter à `http://localhost:8000/v1`. Une interface de chat intégrée est aussi disponible à `http://localhost:8000/admin/chat`.
+Le serveur détecte automatiquement les LLM, VLM, modèles d'embedding, rerankers et modèles audio depuis les sous-répertoires. N'importe quel client compatible OpenAI peut se connecter à `http://localhost:8000/v1`. Une interface de chat intégrée est aussi disponible à `http://localhost:8000/admin/chat`.
 
 ### Service Homebrew
 
@@ -122,7 +125,7 @@ Les logs sont écrits à deux endroits :
 
 ## Fonctionnalités
 
-Prend en charge les LLM texte, les modèles vision-langage (VLM), les modèles OCR, les embeddings et les rerankers sur Apple Silicon.
+Prend en charge les LLM texte, les modèles vision-langage (VLM), les modèles OCR, les embeddings, les rerankers et les modèles audio pour STT, TTS et STS/traitement audio sur Apple Silicon.
 
 ### Tableau de bord Admin
 
@@ -135,6 +138,10 @@ Interface web sur `/admin` pour le monitoring en temps réel, la gestion des mod
 ### Modèles vision-langage (VLM)
 
 Exécutez des VLM avec le même stack de batching continu et cache KV à plusieurs niveaux que les LLM texte. Supporte le chat multi-images, les entrées images en base64/URL/fichier, et l'appel d'outils avec contexte visuel. Les modèles OCR (DeepSeek-OCR, DOTS-OCR, GLM-OCR) sont auto-détectés avec des prompts optimisés.
+
+### Modèles audio
+
+Exécutez les modèles speech-to-text, text-to-speech et speech-to-speech/traitement audio via des routes audio dédiées. Utilisez `/v1/audio/speech` pour les modèles `audio_tts` et `/v1/audio/process` pour les modèles `audio_sts` d'amélioration, séparation ou speech-to-speech. Les installations depuis les sources doivent utiliser l'extra `audio`.
 
 ### Cache KV à deux niveaux (Chaud + Froid)
 
@@ -157,7 +164,7 @@ Support du context scaling pour faire tourner des modèles avec un contexte réd
 
 ### Service multi-modèles
 
-Chargez des LLM, VLM, modèles d'embedding et rerankers sur le même serveur. Les modèles sont gérés via une combinaison de contrôles automatiques et manuels :
+Chargez des LLM, VLM, modèles d'embedding, rerankers et modèles audio sur le même serveur. Les modèles TTS et STS/traitement audio utilisent des moteurs audio dédiés non-chat. Les modèles sont gérés via une combinaison de contrôles automatiques et manuels :
 
 - **Éviction LRU** : Les modèles les moins récemment utilisés sont évincés automatiquement quand la mémoire est faible.
 - **Chargement/déchargement manuel** : Les badges de statut interactifs dans le panneau d'admin permettent de charger ou décharger des modèles à la demande.
@@ -170,7 +177,7 @@ Chargez des LLM, VLM, modèles d'embedding et rerankers sur le même serveur. Le
 Configurez les paramètres d'échantillonnage, les kwargs du template de chat, le TTL, l'alias du modèle, le type de modèle, et plus encore — directement depuis le panneau d'admin. Les modifications s'appliquent immédiatement sans redémarrage du serveur.
 
 - **Alias de modèle** : définissez un nom personnalisé visible par l'API. `/v1/models` retourne l'alias, et les requêtes acceptent l'alias comme le nom du répertoire.
-- **Type de modèle** : forcez manuellement un modèle en LLM ou VLM indépendamment de l'auto-détection.
+- **Type de modèle** : forcez manuellement un modèle en LLM, VLM, `audio_tts` ou `audio_sts` indépendamment de l'auto-détection.
 
 <p align="center">
   <img src="docs/images/omlx_ChatTemplateKwargs.png" alt="oMLX Chat Template Kwargs" width="480">
@@ -227,7 +234,24 @@ Remplacement direct des APIs OpenAI et Anthropic. Supporte les statistiques d'us
 | `POST /v1/messages` | API Messages Anthropic |
 | `POST /v1/embeddings` | Embeddings texte |
 | `POST /v1/rerank` | Reranking de documents |
+| `POST /v1/audio/transcriptions` | Speech-to-text ; nécessite l'extra `audio` |
+| `POST /v1/audio/speech` | Synthèse vocale ; nécessite l'extra `audio` |
+| `POST /v1/audio/process` | STS/traitement audio ; nécessite l'extra `audio` |
 | `GET /v1/models` | Lister les modèles disponibles |
+
+Les endpoints audio sont des routes dédiées. Utilisez `/v1/audio/speech` pour les modèles `audio_tts` et `/v1/audio/process` pour les modèles `audio_sts` speech-to-speech, amélioration ou séparation.
+
+```bash
+curl http://localhost:8000/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen3-tts","input":"Hello from oMLX","voice":"alloy","response_format":"wav"}' \
+  --output speech.wav
+
+curl http://localhost:8000/v1/audio/process \
+  -F model=deepfilternet \
+  -F file=@input.wav \
+  --output processed.wav
+```
 
 ### Appel d'outils et sorties structurées
 
@@ -268,6 +292,7 @@ Les modèles sont auto-détectés par type. Vous pouvez aussi télécharger des 
 | OCR | DeepSeek-OCR, DOTS-OCR, GLM-OCR |
 | Embedding | BERT, BGE-M3, ModernBERT |
 | Reranker | ModernBERT, XLM-RoBERTa |
+| Audio | Whisper/Qwen ASR, Qwen3-TTS/Kokoro, DeepFilterNet/SAMAudio/LFM2-Audio |
 
 ## Configuration CLI
 

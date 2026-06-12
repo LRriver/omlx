@@ -9,6 +9,8 @@
 <h1 align="center">oMLX</h1>
 <p align="center"><b>LLM inference, optimized for your Mac</b><br>Continuous batching and tiered KV caching, managed directly from your menu bar.</p>
 
+<p align="center"><b>New: first-class audio model modes</b><br>Serve STT, TTS, and STS/audio-processing models with dedicated OpenAI-compatible audio endpoints and clear optional dependency guidance.</p>
+
 <p align="center">
 <a href="https://www.buymeacoffee.com/jundot"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="40"></a>
 </p>
@@ -78,6 +80,7 @@ omlx start
 git clone https://github.com/jundot/omlx.git
 cd omlx
 pip install -e .          # Core only
+pip install -e ".[audio]" # With audio models: STT, TTS, and STS/audio processing
 pip install -e ".[mcp]"   # With MCP (Model Context Protocol) support
 ```
 
@@ -106,7 +109,7 @@ omlx restart
 omlx serve --model-dir ~/models
 ```
 
-The server discovers LLMs, VLMs, embedding models, and rerankers from subdirectories automatically. Any OpenAI-compatible client can connect to `http://localhost:8000/v1`. A built-in chat UI is also available at `http://localhost:8000/admin/chat`.
+The server discovers LLMs, VLMs, embedding models, rerankers, and audio models from subdirectories automatically. Any OpenAI-compatible client can connect to `http://localhost:8000/v1`. A built-in chat UI is also available at `http://localhost:8000/admin/chat`.
 
 ### Homebrew Service
 
@@ -131,7 +134,7 @@ Logs are written to two locations:
 
 ## Features
 
-Supports text LLMs, vision-language models (VLM), OCR models, embeddings, and rerankers on Apple Silicon.
+Supports text LLMs, vision-language models (VLM), OCR models, embeddings, rerankers, and audio models for STT, TTS, and STS/audio processing on Apple Silicon.
 
 ### Admin Dashboard
 
@@ -144,6 +147,10 @@ Web UI at `/admin` for real-time monitoring, model management, chat, benchmark, 
 ### Vision-Language Models
 
 Run VLMs with the same continuous batching and tiered KV cache stack as text LLMs. Supports multi-image chat, base64/URL/file image inputs, and tool calling with vision context. OCR models (DeepSeek-OCR, DOTS-OCR, GLM-OCR) are auto-detected with optimized prompts.
+
+### Audio Models
+
+Run speech-to-text, text-to-speech, and speech-to-speech/audio-processing models through dedicated audio routes. Use `/v1/audio/speech` for `audio_tts` models and `/v1/audio/process` for `audio_sts` enhancement, separation, or speech-to-speech models. Source installs should use the `audio` extra.
 
 ### Tiered KV Cache (Hot + Cold)
 
@@ -166,7 +173,7 @@ Context scaling support for running smaller context models with Claude Code. Sca
 
 ### Multi-Model Serving
 
-Load LLMs, VLMs, embedding models, and rerankers within the same server. Models are managed through a combination of automatic and manual controls:
+Load LLMs, VLMs, embedding models, rerankers, and audio models within the same server. TTS and STS/audio-processing models use dedicated non-chat audio engines. Models are managed through a combination of automatic and manual controls:
 
 - **LRU eviction**: Least-recently-used models are evicted automatically when memory runs low.
 - **Manual load/unload**: Interactive status badges in the admin panel let you load or unload models on demand.
@@ -179,7 +186,7 @@ Load LLMs, VLMs, embedding models, and rerankers within the same server. Models 
 Configure sampling parameters, chat template kwargs, TTL, model alias, model type override, and more per model directly from the admin panel. Changes apply immediately without server restart.
 
 - **Model alias**: set a custom API-visible name. `/v1/models` returns the alias, and requests accept both the alias and directory name.
-- **Model type override**: manually set a model as LLM or VLM regardless of auto-detection.
+- **Model type override**: manually set a model as LLM, VLM, `audio_tts`, or `audio_sts` regardless of auto-detection.
 
 <p align="center">
   <img src="docs/images/omlx_ChatTemplateKwargs.png" alt="oMLX Chat Template Kwargs" width="480">
@@ -237,7 +244,24 @@ Drop-in replacement for OpenAI and Anthropic APIs. Supports streaming usage stat
 | `POST /v1/messages` | Anthropic Messages API |
 | `POST /v1/embeddings` | Text embeddings |
 | `POST /v1/rerank` | Document reranking |
+| `POST /v1/audio/transcriptions` | Speech-to-text; requires the `audio` extra |
+| `POST /v1/audio/speech` | Text-to-speech; requires the `audio` extra |
+| `POST /v1/audio/process` | STS/audio processing; requires the `audio` extra |
 | `GET /v1/models` | List available models |
+
+Audio endpoints are dedicated routes. Use `/v1/audio/speech` for `audio_tts` models and `/v1/audio/process` for `audio_sts` speech-to-speech, enhancement, or separation models.
+
+```bash
+curl http://localhost:8000/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen3-tts","input":"Hello from oMLX","voice":"alloy","response_format":"wav"}' \
+  --output speech.wav
+
+curl http://localhost:8000/v1/audio/process \
+  -F model=deepfilternet \
+  -F file=@input.wav \
+  --output processed.wav
+```
 
 ### Tool Calling & Structured Output
 
@@ -278,6 +302,7 @@ Models are auto-detected by type. You can also download models directly from the
 | OCR | DeepSeek-OCR, DOTS-OCR, GLM-OCR |
 | Embedding | BERT, BGE-M3, ModernBERT |
 | Reranker | ModernBERT, XLM-RoBERTa |
+| Audio | Whisper/Qwen ASR, Qwen3-TTS/Kokoro, DeepFilterNet/SAMAudio/LFM2-Audio |
 
 ## CLI Configuration
 
