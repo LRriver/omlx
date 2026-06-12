@@ -9,7 +9,7 @@
 <h1 align="center">oMLX</h1>
 <p align="center"><b>LLM 推理，为你的 Mac 优化</b><br>连续批处理和分层 KV 缓存，直接从菜单栏管理。</p>
 
-<p align="center"><b>新增：一等音频模型模式</b><br>通过专用的 OpenAI 兼容音频端点服务 STT、TTS 和 STS/音频处理模型，并提供清晰的可选依赖安装提示。</p>
+<p align="center"><b>LRriver/omlx fork 新增能力</b><br>本 fork 新增一等 STT、TTS 和 STS/音频处理模型模式，始终可见的 <code>/v1/audio/*</code> 路由，<code>audio_tts</code>/<code>audio_sts</code> 处理，以及清晰的 <code>omlx[audio]</code> 依赖安装提示。</p>
 
 <p align="center">
 <a href="https://www.buymeacoffee.com/jundot"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="40"></a>

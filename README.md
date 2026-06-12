@@ -9,7 +9,7 @@
 <h1 align="center">oMLX</h1>
 <p align="center"><b>LLM inference, optimized for your Mac</b><br>Continuous batching and tiered KV caching, managed directly from your menu bar.</p>
 
-<p align="center"><b>New: first-class audio model modes</b><br>Serve STT, TTS, and STS/audio-processing models with dedicated OpenAI-compatible audio endpoints and clear optional dependency guidance.</p>
+<p align="center"><b>Fork additions in LRriver/omlx</b><br>This fork adds first-class STT, TTS, and STS/audio-processing model modes, always-visible <code>/v1/audio/*</code> routes, <code>audio_tts</code>/<code>audio_sts</code> handling, and clear <code>omlx[audio]</code> dependency guidance.</p>
 
 <p align="center">
 <a href="https://www.buymeacoffee.com/jundot"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="40"></a>

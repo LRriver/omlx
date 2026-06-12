@@ -9,7 +9,7 @@
 <h1 align="center">oMLX</h1>
 <p align="center"><b>Mac에 최적화된 LLM 추론 서버</b><br>Continuous Batching과 다단계 KV 캐시로 최적화된 추론 서버를, 메뉴바에서 편리하게</p>
 
-<p align="center"><b>새 기능: 일급 오디오 모델 모드</b><br>OpenAI 호환 전용 오디오 엔드포인트로 STT, TTS, STS/오디오 처리 모델을 제공하고 선택 의존성 설치 안내를 명확히 보여줍니다.</p>
+<p align="center"><b>LRriver/omlx fork 추가 기능</b><br>이 fork는 STT, TTS, STS/오디오 처리 모델을 일급 모델 모드로 지원하고, 항상 보이는 <code>/v1/audio/*</code> 라우트, <code>audio_tts</code>/<code>audio_sts</code> 처리, 명확한 <code>omlx[audio]</code> 의존성 안내를 추가합니다.</p>
 
 <p align="center">
 <a href="https://www.buymeacoffee.com/jundot"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="40"></a>

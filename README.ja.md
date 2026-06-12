@@ -9,7 +9,7 @@
 <h1 align="center">oMLX</h1>
 <p align="center"><b>Mac向けに最適化されたLLM推論サーバー</b><br>連続バッチングと階層型KVキャッシュを、メニューバーから直接管理します。</p>
 
-<p align="center"><b>新機能：ファーストクラスの音声モデルモード</b><br>OpenAI 互換の専用音声エンドポイントで STT、TTS、STS/音声処理モデルを提供し、任意依存関係の導入方法も明確に案内します。</p>
+<p align="center"><b>LRriver/omlx fork の追加機能</b><br>この fork では、STT、TTS、STS/音声処理モデルをファーストクラスのモデルモードとして扱い、常に見える <code>/v1/audio/*</code> ルート、<code>audio_tts</code>/<code>audio_sts</code> の処理、明確な <code>omlx[audio]</code> 依存関係ガイドを追加しています。</p>
 
 <p align="center">
 <a href="https://www.buymeacoffee.com/jundot"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="40"></a>
