@@ -235,6 +235,11 @@ class TestNonAudioRegressions:
         result = detect_model_type(tmp_path)
         assert result not in ("audio_stt", "audio_tts")
 
+    def test_qwen3_causal_lm_not_tts(self, tmp_path):
+        """Plain Qwen3 text LMs must not collide with qwen3_tts detection."""
+        _write_config(tmp_path, {"model_type": "qwen3", "architectures": ["Qwen3ForCausalLM"]})
+        assert detect_model_type(tmp_path) != "audio_tts"
+
     def test_missing_config_defaults_to_llm(self, tmp_path):
         assert detect_model_type(tmp_path) == "llm"
 

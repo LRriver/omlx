@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+pytest.importorskip("mlx.core", reason="requires core MLX runtime")
+
 from omlx.engine_pool import EngineEntry, EnginePool
 from omlx.exceptions import (
     InsufficientMemoryError,
@@ -358,6 +360,37 @@ class TestApplySettingsOverrides:
         # model-b should remain unchanged (no override)
         assert pool.get_entry("model-b").model_type == "llm"
         assert pool.get_entry("model-b").engine_type == "batched"
+
+    @pytest.mark.parametrize(
+        ("model_type_override", "expected_engine_type"),
+        [
+            ("audio_tts", "audio_tts"),
+            ("audio_sts", "audio_sts"),
+        ],
+    )
+    def test_audio_override_changes_engine_type(
+        self,
+        small_mock_model_dir,
+        model_type_override,
+        expected_engine_type,
+    ):
+        """Audio model_type_override values map to dedicated audio engines."""
+        pool = _make_pool(ceiling=10 * 1024**3)
+        pool.discover_models(str(small_mock_model_dir))
+
+        from omlx.model_settings import ModelSettings
+
+        settings_manager = MagicMock()
+        settings_manager.get_settings.side_effect = lambda mid: (
+            ModelSettings(model_type_override=model_type_override)
+            if mid == "model-a"
+            else ModelSettings()
+        )
+
+        pool.apply_settings_overrides(settings_manager)
+
+        assert pool.get_entry("model-a").model_type == model_type_override
+        assert pool.get_entry("model-a").engine_type == expected_engine_type
 
     def test_no_override_leaves_entry_unchanged(self, small_mock_model_dir):
         """Test that None override doesn't change entry types."""

@@ -8,7 +8,10 @@ All unit tests run with mocked STSEngine and EnginePool — mlx-audio is not
 required. Integration tests (marked @pytest.mark.slow) need a real model.
 """
 
+import builtins
 import io
+import sys
+import types
 import wave
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -259,6 +262,72 @@ class TestSTSEndpointErrors:
             data={"model": "deepfilternet"},
         )
         assert response.status_code >= 500
+
+    def test_missing_audio_dependency_returns_503(self, monkeypatch):
+        """Missing mlx-audio during STS engine load returns install guidance."""
+        from fastapi import FastAPI
+        from omlx.api.audio_routes import router
+
+        class FakeSTSEngine:
+            pass
+
+        monkeypatch.setitem(
+            sys.modules,
+            "omlx.engine.sts",
+            types.SimpleNamespace(STSEngine=FakeSTSEngine),
+        )
+
+        app = FastAPI()
+        app.include_router(router)
+        mock_pool = MagicMock()
+        mock_pool.get_engine = AsyncMock(
+            side_effect=ImportError(
+                'mlx-audio is required. Install it with: pip install "omlx[audio]"'
+            )
+        )
+
+        with (
+            patch("omlx.api.audio_routes._get_engine_pool", return_value=mock_pool),
+            patch("omlx.api.audio_routes._resolve_model", side_effect=lambda m: m),
+        ):
+            with TestClient(app, raise_server_exceptions=False) as client:
+                response = client.post(
+                    "/v1/audio/process",
+                    files={"file": ("audio.wav", TINY_WAV, "audio/wav")},
+                    data={"model": "deepfilternet"},
+                )
+
+        assert response.status_code == 503
+        assert "omlx[audio]" in response.json()["detail"]
+
+    def test_missing_audio_dependency_during_engine_import_returns_503(self, monkeypatch):
+        """Missing mlx-audio while importing STSEngine returns install guidance."""
+        from fastapi import FastAPI
+        from omlx.api.audio_routes import router
+
+        real_import = builtins.__import__
+
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "omlx.engine.sts" and "STSEngine" in fromlist:
+                raise ImportError(
+                    'mlx-audio is required. Install it with: pip install "omlx[audio]"',
+                    name="mlx_audio",
+                )
+            return real_import(name, globals, locals, fromlist, level)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        app = FastAPI()
+        app.include_router(router)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.post(
+                "/v1/audio/process",
+                files={"file": ("audio.wav", TINY_WAV, "audio/wav")},
+                data={"model": "deepfilternet"},
+            )
+
+        assert response.status_code == 503
+        assert "omlx[audio]" in response.json()["detail"]
 
 
 # ---------------------------------------------------------------------------

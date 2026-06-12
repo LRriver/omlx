@@ -7,6 +7,8 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+pytest.importorskip("mlx.core", reason="requires core MLX runtime")
+
 from omlx.engine_pool import EngineEntry
 from omlx.exceptions import InvalidRequestError, ModelNotFoundError
 from omlx.model_settings import ModelSettings, ModelSettingsManager
@@ -586,6 +588,7 @@ class TestGetEngineLLMTypeValidation:
         with pytest.raises(HTTPException) as exc_info:
             await get_engine("qwen3-tts", EngineType.LLM)
         assert exc_info.value.status_code == 400
+        assert "/v1/audio/speech" in str(exc_info.value.detail)
 
     @pytest.mark.asyncio
     async def test_llm_rejects_sts_engine(self):
@@ -598,6 +601,7 @@ class TestGetEngineLLMTypeValidation:
         with pytest.raises(HTTPException) as exc_info:
             await get_engine("deepfilternet", EngineType.LLM)
         assert exc_info.value.status_code == 400
+        assert "/v1/audio/process" in str(exc_info.value.detail)
 
     @pytest.mark.asyncio
     async def test_llm_rejects_embedding_engine(self):

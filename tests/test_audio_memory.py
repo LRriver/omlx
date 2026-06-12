@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for audio engine memory tracking in EnginePool (INV-06).
 
-Verifies that audio (STT/TTS) engines participate in the same LRU memory
+Verifies that audio (STT/TTS/STS) engines participate in the same LRU memory
 management lifecycle as LLM/VLM/embedding engines:
   - Loading updates _current_model_memory
   - Unloading decrements _current_model_memory
@@ -10,7 +10,8 @@ management lifecycle as LLM/VLM/embedding engines:
   - _find_lru_victim() can select an audio model
   - Pre-load eviction evicts audio when memory is tight
 
-All tests run with mocked engines — mlx-audio is not required.
+All tests run with mocked engines — mlx-audio is not required, but the
+EnginePool import path still requires the core MLX runtime.
 """
 
 import asyncio
@@ -19,6 +20,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+pytest.importorskip("mlx.core", reason="requires core MLX runtime")
 
 from omlx.engine_pool import EngineEntry, EnginePool
 
@@ -40,7 +43,7 @@ def _engine_pool_with_ceiling(ceiling=None):
 
 @pytest.fixture
 def audio_model_dir(tmp_path):
-    """Model directory with one LLM and one STT model (small sizes for fast tests)."""
+    """Model directory with LLM, STT, TTS, and STS models."""
     llm_dir = tmp_path / "llama-3b"
     llm_dir.mkdir()
     (llm_dir / "config.json").write_text(json.dumps({"model_type": "llama"}))
@@ -59,12 +62,17 @@ def audio_model_dir(tmp_path):
     (tts_dir / "config.json").write_text(json.dumps({"model_type": "qwen3_tts"}))
     (tts_dir / "model.safetensors").write_bytes(b"0" * 1536)  # ~1.5KB
 
+    sts_dir = tmp_path / "deepfilter-sts"
+    sts_dir.mkdir()
+    (sts_dir / "config.json").write_text(json.dumps({"model_type": "deepfilternet"}))
+    (sts_dir / "model.safetensors").write_bytes(b"0" * 1792)  # ~1.75KB
+
     return tmp_path
 
 
 @pytest.fixture
 def pool_with_audio(audio_model_dir):
-    """EnginePool with audio + LLM models, generous memory limit."""
+    """EnginePool with STT/TTS/STS + LLM models, generous memory limit."""
     pool = _engine_pool_with_ceiling(10 * 1024**3)
     pool.discover_models(str(audio_model_dir))
     return pool
@@ -102,9 +110,28 @@ class TestAudioMemoryTracking:
         mock_engine.start = AsyncMock()
         mock_engine.stop = AsyncMock()
 
-        with patch("omlx.engine_pool.TTSEngine", return_value=mock_engine, create=True):
+        with patch("omlx.engine_pool.TTSEngine", return_value=mock_engine, create=True) as cls:
             await pool.get_engine("kokoro-tts")
 
+        cls.assert_called_once_with(model_name=str(pool._entries["kokoro-tts"].model_path))
+        assert pool.current_model_memory > 0
+
+    @pytest.mark.asyncio
+    async def test_loading_sts_updates_memory(self, pool_with_audio):
+        """Loading an STS engine increments _current_model_memory."""
+        pool = pool_with_audio
+
+        mock_engine = MagicMock()
+        mock_engine.start = AsyncMock()
+        mock_engine.stop = AsyncMock()
+
+        with patch("omlx.engine_pool.STSEngine", return_value=mock_engine, create=True) as cls:
+            await pool.get_engine("deepfilter-sts")
+
+        cls.assert_called_once_with(
+            model_name=str(pool._entries["deepfilter-sts"].model_path),
+            config_model_type="deepfilternet",
+        )
         assert pool.current_model_memory > 0
 
     @pytest.mark.asyncio
@@ -122,6 +149,42 @@ class TestAudioMemoryTracking:
             assert memory_after_load > 0
 
             await pool._unload_engine("whisper-tiny")
+
+        assert pool.current_model_memory < memory_after_load
+
+    @pytest.mark.asyncio
+    async def test_unloading_tts_decrements_memory(self, pool_with_audio):
+        """Unloading a TTS engine decrements _current_model_memory."""
+        pool = pool_with_audio
+
+        mock_engine = MagicMock()
+        mock_engine.start = AsyncMock()
+        mock_engine.stop = AsyncMock()
+
+        with patch("omlx.engine_pool.TTSEngine", return_value=mock_engine, create=True):
+            await pool.get_engine("kokoro-tts")
+            memory_after_load = pool.current_model_memory
+            assert memory_after_load > 0
+
+            await pool._unload_engine("kokoro-tts")
+
+        assert pool.current_model_memory < memory_after_load
+
+    @pytest.mark.asyncio
+    async def test_unloading_sts_decrements_memory(self, pool_with_audio):
+        """Unloading an STS engine decrements _current_model_memory."""
+        pool = pool_with_audio
+
+        mock_engine = MagicMock()
+        mock_engine.start = AsyncMock()
+        mock_engine.stop = AsyncMock()
+
+        with patch("omlx.engine_pool.STSEngine", return_value=mock_engine, create=True):
+            await pool.get_engine("deepfilter-sts")
+            memory_after_load = pool.current_model_memory
+            assert memory_after_load > 0
+
+            await pool._unload_engine("deepfilter-sts")
 
         assert pool.current_model_memory < memory_after_load
 
@@ -166,6 +229,22 @@ class TestAudioLastAccess:
         assert entry.last_access == 1234.0
 
     @pytest.mark.asyncio
+    async def test_get_sts_engine_updates_last_access(self, pool_with_audio):
+        """get_engine() updates last_access timestamp for STS entries."""
+        pool = pool_with_audio
+        entry = pool._entries["deepfilter-sts"]
+        assert entry.last_access == 0.0
+
+        mock_engine = MagicMock()
+        mock_engine.start = AsyncMock()
+
+        with patch("omlx.engine_pool.STSEngine", return_value=mock_engine, create=True):
+            with patch("time.time", return_value=4321.0):
+                await pool.get_engine("deepfilter-sts")
+
+        assert entry.last_access == 4321.0
+
+    @pytest.mark.asyncio
     async def test_second_get_engine_refreshes_last_access(self, pool_with_audio):
         """Second call to get_engine() refreshes last_access."""
         pool = pool_with_audio
@@ -192,10 +271,11 @@ class TestAudioLRUEviction:
     """Audio engines are eligible for LRU eviction by default."""
 
     def test_audio_entry_not_pinned_by_default(self, pool_with_audio):
-        """STT and TTS entries are not pinned by default."""
+        """STT, TTS, and STS entries are not pinned by default."""
         pool = pool_with_audio
         assert pool._entries["whisper-tiny"].is_pinned is False
         assert pool._entries["kokoro-tts"].is_pinned is False
+        assert pool._entries["deepfilter-sts"].is_pinned is False
 
     def test_find_lru_victim_can_select_stt(self, pool_with_audio):
         """_find_lru_victim() returns STT model when it is the oldest loaded entry."""
@@ -209,6 +289,30 @@ class TestAudioLRUEviction:
 
         victim = pool._find_lru_victim()
         assert victim == "whisper-tiny"
+
+    def test_find_lru_victim_can_select_tts(self, pool_with_audio):
+        """_find_lru_victim() returns TTS model when it is oldest loaded entry."""
+        pool = pool_with_audio
+
+        mock_engine = MagicMock()
+        mock_engine.has_active_requests.return_value = False
+        pool._entries["kokoro-tts"].engine = mock_engine
+        pool._entries["kokoro-tts"].last_access = 10.0
+
+        victim = pool._find_lru_victim()
+        assert victim == "kokoro-tts"
+
+    def test_find_lru_victim_can_select_sts(self, pool_with_audio):
+        """_find_lru_victim() returns STS model when it is oldest loaded entry."""
+        pool = pool_with_audio
+
+        mock_engine = MagicMock()
+        mock_engine.has_active_requests.return_value = False
+        pool._entries["deepfilter-sts"].engine = mock_engine
+        pool._entries["deepfilter-sts"].last_access = 10.0
+
+        victim = pool._find_lru_victim()
+        assert victim == "deepfilter-sts"
 
     def test_find_lru_victim_selects_oldest_audio_over_newer_llm(self, pool_with_audio):
         """_find_lru_victim() picks the oldest entry regardless of model type."""

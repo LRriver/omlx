@@ -210,6 +210,15 @@ class TestModelSettings:
         restored = ModelSettings.from_dict(d)
         assert restored.model_type_override == "vlm"
 
+    @pytest.mark.parametrize("model_type", ["audio_tts", "audio_sts"])
+    def test_audio_model_type_override_roundtrip(self, model_type):
+        """Audio model_type_override values survive to_dict -> from_dict."""
+        original = ModelSettings(model_type_override=model_type)
+        d = original.to_dict()
+        assert d["model_type_override"] == model_type
+        restored = ModelSettings.from_dict(d)
+        assert restored.model_type_override == model_type
+
     def test_model_type_override_excluded_when_none(self):
         """Test model_type_override excluded from to_dict when None."""
         settings = ModelSettings()
@@ -536,6 +545,19 @@ class TestModelSettingsManager:
             manager2 = ModelSettingsManager(Path(tmpdir))
             loaded = manager2.get_settings("test-model")
             assert loaded.model_type_override == "embedding"
+
+    @pytest.mark.parametrize("model_type", ["audio_tts", "audio_sts"])
+    def test_audio_model_type_override_persist(self, model_type):
+        """Audio model_type_override values survive save/load cycle."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = ModelSettingsManager(Path(tmpdir))
+
+            settings = ModelSettings(model_type_override=model_type)
+            manager.set_settings("test-model", settings)
+
+            manager2 = ModelSettingsManager(Path(tmpdir))
+            loaded = manager2.get_settings("test-model")
+            assert loaded.model_type_override == model_type
 
     def test_model_type_override_clear(self):
         """Test clearing model_type_override by setting to None."""
